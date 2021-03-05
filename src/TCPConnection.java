@@ -9,9 +9,10 @@ import java.net.UnknownHostException;
 
 public class TCPConnection 
 {
-	static private Socket clientSocket = null;
-	static private PrintWriter out = null;
-	static private BufferedReader in = null;
+	private Socket clientSocket = null;
+	private PrintWriter out = null;
+	private BufferedReader in = null;
+	boolean connected = false;
 	static String getClientIP() throws IOException {
 		DatagramSocket socket = new DatagramSocket(4445);
 		socket.setSoTimeout(5000);
@@ -37,7 +38,7 @@ public class TCPConnection
         socket.close();
         return received;
     }
-	static void connectToClient()
+	void connectToClient()
 	{
 		System.out.println("Waiting for client to ask us to connect to them");
 		String clientIp = null;
@@ -56,6 +57,7 @@ public class TCPConnection
 	        in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 	        try {
 				send("p");
+				connected = true;
 			} catch (Exception e) {
 				disconnect();
 			}
@@ -67,7 +69,7 @@ public class TCPConnection
 			e.printStackTrace();
 		}
 	}
-	static void send(String str) throws Exception
+	void send(String str) throws Exception
 	{
 		System.out.println("-> "+str);
 		out.println(str);
@@ -76,12 +78,12 @@ public class TCPConnection
 			throw new Exception("Connection Exception"); 
 		}
 	}
-	static void parse(String str)
+	void parse(String str)
 	{
 		System.out.println("<- "+str);
 		String[] params = str.split(":");
 	}
-	static void disconnect()
+	void disconnect()
 	{
 		try {
 			in.close();
@@ -93,18 +95,18 @@ public class TCPConnection
 		}
 		clientSocket = null;
 	}
-	static long lastPing = 0;
-	static void logic()
+	long lastPing = 0;
+	boolean logic()
 	{
 		try
 		{
 			if(clientSocket==null)
 			{
-				TCPConnection.connectToClient();
+				return false;
 			}
-			if(TCPConnection.in.ready())
+			if(in.ready())
 			{
-				parse(TCPConnection.in.readLine());
+				parse(in.readLine());
 			}
 			if(System.currentTimeMillis()-lastPing>1000)
 			{
@@ -114,8 +116,55 @@ public class TCPConnection
 		}
 		catch(Exception e)
 		{
-			e.printStackTrace();
+			System.out.println("Networking error "+e.getMessage());
+//			e.printStackTrace();
 			disconnect();
+		}
+		return true;
+	}
+	static class RunningThread implements Runnable
+	{
+		TCPConnection connection;
+		TCPConnection init()
+		{
+			connection = new TCPConnection();
+			return connection;
+		}
+		boolean run = true;
+		@Override
+		public void run() 
+		{
+			connection.connectToClient();
+			while(run)
+			{
+				run = connection.logic();
+				try {
+					Thread.sleep(10);
+				} catch (InterruptedException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+			System.out.println("Connection Thread Ended");
+			iPadServer.removeConnection(connection);
+		}		
+	}
+	void startListening()
+	{
+		
+	}
+	static TCPConnection waitingConnection = null;
+	static void listenForConnections()
+	{
+		if(waitingConnection==null)
+		{
+			RunningThread rt = new RunningThread();
+			waitingConnection = rt.init();
+			new Thread(rt).start();
+		}
+		if(waitingConnection.connected)
+		{
+			waitingConnection = null;
 		}
 	}
 }
